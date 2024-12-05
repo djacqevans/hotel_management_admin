@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, status
 from typing import List
 
 from app.models.rooms import RoomResponse, RoomCreate, RoomDB
+from app.models.customer import CustomerResponse, CustomerCreate, CustomerDB
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from app.db.base_db import get_session
@@ -55,6 +56,45 @@ def create_room(room: RoomCreate):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Failed to create room"
         )
+    
+
+@app.get("/customers", 
+         response_model=List[CustomerResponse],
+         summary="Get all customers",
+         description="Retrieve a list of all customers")
+def get_customers():
+    try:
+        with get_session() as session:
+            customers = CustomerDB.get_all_customers(session)
+            return customers
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve customers"
+        )
 
 
-
+@app.post("/customers", 
+          response_model=CustomerResponse,
+          status_code=status.HTTP_201_CREATED,
+          summary="Create a new customer",
+          description="Create a new customer with the provided details")
+def create_customer(customer: CustomerCreate):
+    try:
+        with get_session() as session:
+            db_customer = CustomerDB(
+                name=customer.name,
+                email=customer.email,
+                phone=customer.phone,
+                address=customer.address,
+                proof_of_identity=customer.proof_of_identity
+            )
+            session.add(db_customer)
+            session.commit()
+            session.refresh(db_customer)
+            return db_customer
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to create customer"
+        )
