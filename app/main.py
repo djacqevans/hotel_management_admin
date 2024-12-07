@@ -9,12 +9,17 @@ from app.models.enums import BookingStatus
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from app.db.base_db import get_session
+from app.db.init_db import init_db
+import logging
 
 app = FastAPI(
     title="RS Residency API",
     description="API for RS Residency",
     version="0.0.1"
 )
+
+# Initialize database tables
+init_db()
 
 @app.get("/")
 def read_root():
@@ -29,10 +34,7 @@ def get_rooms():
             rooms = RoomDB.get_all_rooms(session)
             return rooms
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve rooms"
-        )
+        logging.error(e)
 
 @app.post("/create-room", 
           response_model=RoomResponse,
@@ -122,23 +124,48 @@ def get_bookings():
 def create_booking(booking: BookingCreate):
     try:
         with get_session() as session:
-            
-            # Check room availability
-            if BookingDB.is_room_occupied(session, booking.room_id):
+            # Check room availability with proper date parameters
+            if BookingDB.is_room_occupied(
+                session, 
+                booking.room_id, 
+                booking.scheduled_check_in,
+                booking.scheduled_check_out
+            ):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Room is currently occupied"
+                    detail="Room is not available for the selected dates"
+                )
+            
+            # Verify room exists
+            room = session.query(RoomDB).filter(RoomDB.id == booking.room_id).first()
+            if not room:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Room not found"
+                )
+            
+            # Verify customer exists
+            customer = session.query(CustomerDB).filter(CustomerDB.id == booking.customer_id).first()
+            if not customer:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Customer not found"
                 )
                 
             # Create booking
-            db_booking = BookingDB(
-                **booking.model_dump()
-            )
+            db_booking = BookingDB(**booking.model_dump())
             session.add(db_booking)
             session.commit()
+            session.refresh(db_booking)
             return db_booking
+            
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create booking: {str(e)}"
+        )
 
 @app.post("/bookings/{booking_id}/check-in")
 def check_in(booking_id: int):

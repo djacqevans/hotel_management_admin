@@ -1,10 +1,8 @@
 from sqlalchemy import Column, Integer, String, Float, JSON, DateTime
-from sqlalchemy.orm import declarative_base
+from app.models.base import Base
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
-
-Base = declarative_base()
 
 class CustomerBase(BaseModel):
     name: str

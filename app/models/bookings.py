@@ -1,12 +1,10 @@
 from datetime import datetime, date, timedelta
 from sqlalchemy import Column, Integer, ForeignKey, Date, DateTime, String, Numeric
 from sqlalchemy.orm import relationship
-from sqlalchemy.orm import declarative_base
+from app.models.base import Base
 from pydantic import BaseModel, field_validator
 from app.models.enums import BookingStatus, PaymentStatus
 from typing import List, Optional
-
-Base = declarative_base()
 
 class BookingDB(Base):
     __tablename__ = "bookings"
@@ -37,13 +35,13 @@ class BookingDB(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
-    room = relationship("RoomDB", back_populates="bookings", foreign_keys=[room_id])
-    customer = relationship("CustomerDB", back_populates="bookings", foreign_keys=[customer_id])
+    room = relationship("RoomDB")
+    customer = relationship("CustomerDB")
 
     
 
     @classmethod
-    def is_room_occupied(cls, session, room_id: int, check_date: date = None) -> bool:
+    def is_room_occupied(cls, session, room_id: int, check_in_date: date, check_out_date: date) -> bool:
         """
         Check if room has any current occupants or bookings for a specific date
         Args:
@@ -51,14 +49,16 @@ class BookingDB(Base):
             room_id: ID of the room to check
             check_date: Optional specific date to check (defaults to today)
         """
-        if check_date is None:
-            check_date = date.today()
-            
         return session.query(cls).filter(
             cls.room_id == room_id,
-            cls.booking_status.in_([BookingStatus.CHECKED_IN.value, BookingStatus.CONFIRMED.value, BookingStatus.PREBOOKED.value ]),
-            cls.scheduled_check_in <= check_date,
-            cls.scheduled_check_out > check_date
+            cls.booking_status.in_([
+                BookingStatus.CHECKED_IN.value, 
+                BookingStatus.CONFIRMED.value, 
+                BookingStatus.PREBOOKED.value
+            ]),
+            # Check if there's any overlap with existing bookings
+            cls.scheduled_check_in < check_out_date,
+            cls.scheduled_check_out > check_in_date
         ).first() is not None
 
     @classmethod
