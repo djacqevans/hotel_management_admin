@@ -11,6 +11,9 @@ from sqlalchemy.orm import Session
 from app.db.base_db import get_session
 from app.db.init_db import init_db
 import logging
+from app.models.users import UserDB, UserCreate, UserResponse
+from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import Depends
 
 app = FastAPI(
     title="RS Residency API",
@@ -234,3 +237,87 @@ def cancel_booking(booking_id: int):
             return {"message": "Booking cancelled successfully"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/register", 
+          response_model=UserResponse, 
+          status_code=status.HTTP_201_CREATED)
+def register_user(user: UserCreate):
+    try:
+        with get_session() as session:
+            
+            if session.query(UserDB).filter(UserDB.username == user.username).first():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Username already taken"
+                )
+            
+            now = datetime.utcnow()
+            db_user = UserDB(
+                username=user.username,
+                hashed_password=UserDB.hash_password(user.password),
+                is_active=True,
+                created_at=now,
+                updated_at=now
+            )
+            session.add(db_user)
+            session.commit()
+            session.refresh(db_user)
+            return db_user
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create user: {str(e)}"
+        )
+
+@app.get("/users", 
+         response_model=List[UserResponse],
+         summary="Get all users",
+         description="Retrieve a list of all registered users")
+def get_users():
+    try:
+        with get_session() as session:
+            users = session.query(UserDB).all()
+            return users
+    except Exception as e:
+        logging.error(f"Error retrieving users: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve users"
+        )
+
+@app.post("/login", 
+          summary="User login",
+          description="Login with username and password")
+def login(user_credentials: OAuth2PasswordRequestForm = Depends()):
+    try:
+        with get_session() as session:
+            # Find user by username
+            user = session.query(UserDB).filter(
+                UserDB.username == user_credentials.username
+            ).first()
+            
+            # Check if user exists and verify password
+            if not user or not user.verify_password(user_credentials.password):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            
+            # If credentials are valid, you might want to create an access token here
+            return {
+                "access_token": "your_token_here",  # You should implement proper token generation
+                "token_type": "bearer",
+                "user_id": user.id,
+                "username": user.username
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Login failed: {str(e)}"
+        )
