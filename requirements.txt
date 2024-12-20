@@ -7,3 +7,6 @@ pydantic==2.10.3
 starlette==0.41.3
 bcrypt==4.1.2
 python-jose[cryptography]
+python-decouple==3.8
+passlib[bcrypt]
+python-multipart
