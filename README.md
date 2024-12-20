@@ -1,4 +1,4 @@
-# Hotel Management System
+# Hotel Management System For Admin
 
 A FastAPI-based system for managing hotel rooms and customers, containerized with Docker.
 
