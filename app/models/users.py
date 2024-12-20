@@ -1,24 +1,15 @@
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, Boolean
-from sqlalchemy.orm import relationship
 from app.models.base import Base
 from pydantic import BaseModel, field_validator
-import bcrypt
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+
 from sqlalchemy.orm import Session
-from jose import JWTError, jwt
-from typing import Optional, List
-from decouple import config
+from typing import  List
 from passlib.context import CryptContext
 
-from app.db.base_db import get_session
 
-router = APIRouter()
+
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 

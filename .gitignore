@@ -1,3 +1,4 @@
 hotel-venv
 *.pyc
 .DS_Store
+.idea
