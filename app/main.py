@@ -1,6 +1,10 @@
 from fastapi import FastAPI, HTTPException, status
 from typing import List
 from datetime import datetime
+from app.core.security import create_access_token
+from app.api.dependencies.auth_deps import get_current_user
+from datetime import timedelta
+from app.core.config import settings
 
 from app.models.rooms import RoomResponse, RoomCreate, RoomDB
 from app.models.customer import CustomerResponse, CustomerCreate, CustomerDB
@@ -14,12 +18,19 @@ import logging
 from app.models.users import UserDB, UserCreate, UserResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi import Depends
+from fastapi.security import OAuth2PasswordBearer
 
 app = FastAPI(
     title="RS Residency API",
     description="API for RS Residency",
-    version="0.0.1"
+    version="1.0.0",
+    docs_url=f"{settings.API_V1_STR}/docs",
+    openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
+
+# Remove the client_id configuration
+# Instead, just set up the OAuth2PasswordBearer
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 # Initialize database tables
 init_db()
@@ -28,10 +39,10 @@ init_db()
 def read_root():
     return {"message": "Welcome to RS Residency!"} 
 
-@app.get("/rooms", response_model=List[RoomResponse], 
+@app.get(f"{settings.API_V1_STR}/rooms", response_model=List[RoomResponse], 
          summary="Get all rooms",
          description="Retrieve a list of all available rooms")
-def get_rooms():
+def get_rooms(current_user: UserDB = Depends(get_current_user)):
     try:
         with get_session() as session:
             rooms = RoomDB.get_all_rooms(session)
@@ -44,17 +55,13 @@ def get_rooms():
           status_code=status.HTTP_201_CREATED,
           summary="Create a new room",
           description="Create a new room with the provided details")
-def create_room(room: RoomCreate):
+def create_room(
+    room: RoomCreate,
+    current_user: UserDB = Depends(get_current_user)
+):
     try:
         with get_session() as session:
-            db_room = RoomDB(
-                name=room.name,
-                room_type=room.room_type,
-                floor=room.floor,
-                capacity=room.capacity,
-                price_per_night=room.price_per_night,
-                amenities=room.amenities
-            )
+            db_room = RoomDB(**room.model_dump())
             session.add(db_room)
             session.commit()
             session.refresh(db_room)
@@ -70,7 +77,7 @@ def create_room(room: RoomCreate):
          response_model=List[CustomerResponse],
          summary="Get all customers",
          description="Retrieve a list of all customers")
-def get_customers():
+def get_customers(current_user: UserDB = Depends(get_current_user)):
     try:
         with get_session() as session:
             customers = CustomerDB.get_all_customers(session)
@@ -87,7 +94,10 @@ def get_customers():
           status_code=status.HTTP_201_CREATED,
           summary="Create a new customer",
           description="Create a new customer with the provided details")
-def create_customer(customer: CustomerCreate):
+def create_customer(
+    customer: CustomerCreate,
+    current_user: UserDB = Depends(get_current_user)
+):
     try:
         with get_session() as session:
             db_customer = CustomerDB(
@@ -108,7 +118,7 @@ def create_customer(customer: CustomerCreate):
          response_model=List[BookingResponse],
          summary="Get all bookings",
          description="Retrieve a list of all bookings")
-def get_bookings():
+def get_bookings(current_user: UserDB = Depends(get_current_user)):
     try:
         with get_session() as session:
             bookings = BookingDB.get_all_bookings(session)
@@ -124,7 +134,10 @@ def get_bookings():
           status_code=status.HTTP_201_CREATED,
           summary="Create a new booking",
           description="Create a new booking with the provided details")
-def create_booking(booking: BookingCreate):
+def create_booking(
+    booking: BookingCreate,
+    current_user: UserDB = Depends(get_current_user)
+):
     try:
         with get_session() as session:
             # Check room availability with proper date parameters
@@ -171,7 +184,10 @@ def create_booking(booking: BookingCreate):
         )
 
 @app.post("/bookings/{booking_id}/check-in")
-def check_in(booking_id: int):
+def check_in(
+    booking_id: int,
+    current_user: UserDB = Depends(get_current_user)
+):
     try:
         with get_session() as session:
             
@@ -191,7 +207,10 @@ def check_in(booking_id: int):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/bookings/{booking_id}/check-out")
-def check_out(booking_id: int):
+def check_out(
+    booking_id: int,
+    current_user: UserDB = Depends(get_current_user)
+):
     try:
         with get_session() as session:
            
@@ -217,7 +236,10 @@ def check_out(booking_id: int):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/bookings/{booking_id}/cancel")
-def cancel_booking(booking_id: int):
+def cancel_booking(
+    booking_id: int,
+    current_user: UserDB = Depends(get_current_user)
+):
     try:
         with get_session() as session:
             booking = session.query(BookingDB).filter(BookingDB.id == booking_id).first()
@@ -287,7 +309,7 @@ def get_users():
             detail="Failed to retrieve users"
         )
 
-@app.post("/login", 
+@app.post(f"{settings.API_V1_STR}/login", 
           summary="User login",
           description="Login with username and password")
 def login(user_credentials: OAuth2PasswordRequestForm = Depends()):
@@ -306,9 +328,14 @@ def login(user_credentials: OAuth2PasswordRequestForm = Depends()):
                     headers={"WWW-Authenticate": "Bearer"},
                 )
             
-            # If credentials are valid, you might want to create an access token here
+            # Create access token
+            access_token = create_access_token(
+                subject=user.username,
+                expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+            )
+            
             return {
-                "access_token": "your_token_here",  # You should implement proper token generation
+                "access_token": access_token,
                 "token_type": "bearer",
                 "user_id": user.id,
                 "username": user.username
